@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificador de Sequência de NF-e/NFC-e</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #drop-area { border: 2px dashed #ccc; padding: 20px; text-align: center; margin-bottom: 20px; cursor: pointer; }
+        .quebra-indicada { color: red; font-weight: bold; }
+        .sem-quebra { color: green; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 10pt; }
+        th { background-color: #f2f2f2; }
+        
+        /* Estilos específicos para a DIV de relatório que será exportada */
+        #relatorio-export { padding: 15px; background-color: #fff; }
+        
+        /* Estilo para notas canceladas/rejeitadas */
+        .status-cancelada, .status-sem-autorizacao { background-color: #fcebeb; }
+        .status-autorizada { background-color: #effceb; }
+        
+        /* Estilo para o cabeçalho no PDF (destaque do Nome Fantasia) */
+        .pdf-header { font-size: 12pt; font-weight: bold; margin-top: 20px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        
+        /* Destaque para o valor total */
+        .total-geral {
+            font-size: 18pt;
+            font-weight: bold;
+            padding: 15px;
+            margin-top: 20px; /* Movido para baixo */
+            border: 2px solid #007bff;
+            background-color: #e6f7ff;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        /* Título do Relatório no PDF */
+        .pdf-report-title {
+            font-size: 14pt;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 25px;
+            padding-bottom: 10px;
+            border-bottom: 3px double #000;
+        }
+        
+    </style>
+</head>
+<body>
+
+    <h1>Verificador de Quebra de Sequência NF-e / NFC-e</h1>
+
+    <div id="drop-area">
+        Arraste e solte arquivos **XML** (ou clique para selecionar)<br>
+        <input type="file" id="fileElem" multiple accept=".xml" style="display: none;">
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <button onclick="processarNotas()" id="processButton" disabled>Processar e Verificar Sequência</button>
+        <button onclick="gerarRelatorioPDF()" id="pdfButton" disabled>💾 Gerar PDF do Relatório</button>
+    </div>
+
+    <h2>Relatório de Notas Fiscais (Visualização Completa)</h2>
+    
+    <div id="relatorio-completo"> 
+        <div id="relatorio-container">
+            <p>Carregue os arquivos XML e clique em "Processar" para gerar o relatório.</p>
+        </div>
+    </div>
+
+    <script>
+        // Referências aos elementos HTML
+        const fileElem = document.getElementById('fileElem');
+        const dropArea = document.getElementById('drop-area');
+        const relatorioContainer = document.getElementById('relatorio-container');
+        const processButton = document.getElementById('processButton');
+        const pdfButton = document.getElementById('pdfButton');
+        let notasFiscais = [];
+
+        // --- Configuração de Arrastar e Soltar (Drag and Drop) ---
+
+        ;['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.add('highlight'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.remove('highlight'), false);
+        });
+
+        dropArea.addEventListener('drop', handleDrop, false);
+        dropArea.addEventListener('click', () => fileElem.click(), false);
+        fileElem.addEventListener('change', (e) => handleFiles(e.target.files), false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+        
+        // --- Leitura e Parse dos Arquivos ---
+
+        function handleFiles(files) {
+            notasFiscais = [];
+            pdfButton.disabled = true;
+            if (files.length === 0) {
+                processButton.disabled = true;
+                relatorioContainer.innerHTML = '<p>Carregue os arquivos XML e clique em "Processar" para gerar o relatório.</p>';
+                return;
+            }
+
+            const totalFiles = files.length;
+            let filesRead = 0;
+            relatorioContainer.innerHTML = '<p>Carregando e processando arquivos...</p>';
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+
+                reader.onload = (event) => {
+                    filesRead++;
+                    try {
+                        const parser = new DOMParser();
+                        const xmlDoc = parser.parseFromString(event.target.result, "application/xml");
+                        
+                        // Campos obrigatórios para Agrupamento/Sequência
+                        const nNF = safeInt(xmlDoc, 'nNF');
+                        const mod = safeText(xmlDoc, 'mod');
+                        const serie = safeText(xmlDoc, 'serie');
+                        const CNPJ = safeText(xmlDoc, 'CNPJ');
+
+                        // Campos Adicionais para Visualização
+                        const dhEmi = safeText(xmlDoc, 'dhEmi');
+                        const vNF = safeText(xmlDoc, 'vNF'); 
+                        const chaveAcesso = safeText(xmlDoc, 'chNFe') || safeText(xmlDoc, 'chNFCE');
+                        const xFant = safeText(xmlDoc, 'xFant');
+                        
+                        // Status de Autorização/Cancelamento
+                        const cStat = safeText(xmlDoc, 'cStat');
+                        const xMotivo = safeText(xmlDoc, 'xMotivo');
+
+                        let statusCompleto = formatarStatus(cStat, xMotivo, xmlDoc);
+
+                        if (nNF && mod && serie && CNPJ !== 'N/A') {
+                            notasFiscais.push({
+                                nomeArquivo: file.name,
+                                nNF: nNF,
+                                mod: mod,
+                                serie: serie,
+                                cnpj: CNPJ,
+                                emissao: formatarData(dhEmi),
+                                valorString: formatarValor(vNF), 
+                                valorNumerico: parseFloat(vNF) || 0, 
+                                chave: chaveAcesso,
+                                nomeFantasia: xFant || safeText(xmlDoc, 'xNome') || 'Emitente não identificado',
+                                statusAutorizacao: statusCompleto,
+                                quebra: 'Não processado' 
+                            });
+                        }
+
+                    } catch (e) {
+                        console.error(`Erro ao processar o arquivo ${file.name}:`, e);
+                    }
+                    
+                    if (filesRead === totalFiles) {
+                        processButton.disabled = false;
+                        relatorioContainer.innerHTML = `<p>${notasFiscais.length} notas válidas carregadas. Clique em "Processar e Verificar Sequência".</p>`;
+                    }
+                };
+                reader.readAsText(file);
+            });
+        }
+        
+        // --- Funções Auxiliares de Leitura e Formatação ---
+        
+        function safeText(xmlDoc, tagName) {
+            let element = xmlDoc.querySelector(`*[id='infNFe'] ${tagName}, ${tagName}`);
+            if (element) return element.textContent;
+
+            if (tagName === 'cStat' || tagName === 'xMotivo') {
+                element = xmlDoc.querySelector('protNFe ' + tagName + ', protNFCE ' + tagName);
+                if (element) return element.textContent;
+            }
+            return null;
+        }
+
+        function safeInt(xmlDoc, tagName) {
+            const text = safeText(xmlDoc, tagName);
+            return text ? parseInt(text) : null;
+        }
+
+        function formatarData(dhEmi) {
+            // Formato esperado: YYYY-MM-DDTHH:MM:SS-TZ
+            if (!dhEmi) return 'N/A';
+            try {
+                const datePart = dhEmi.substring(0, 10);
+                const [year, month, day] = datePart.split('-');
+                return `${day}/${month}/${year}`;
+            } catch {
+                return 'Inválida';
+            }
+        }
+        
+        /**
+         * Formata uma data para o padrão DD/MM/AAAA.
+         * @param {Date} date - O objeto Date a ser formatado.
+         * @returns {string} A data formatada.
+         */
+        function formatarDataParaTitulo(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0'); // Mês é 0-indexado
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+
+        /**
+         * Formata o valor numérico para o padrão de moeda brasileira (R$ X.XXX,XX).
+         */
+        function formatarValor(valor) {
+            if (valor === undefined || valor === null || isNaN(parseFloat(valor))) {
+                return 'R$ 0,00';
+            }
+            const numero = parseFloat(valor);
+            return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+        
+        function formatarStatus(cStat, xMotivo, xmlDoc) {
+            const eventType = xmlDoc.querySelector('tpEvento');
+            const cStatEvento = xmlDoc.querySelector('retEvento cStat');
+            const xMotivoEvento = xmlDoc.querySelector('retEvento xMotivo');
+
+            if (eventType && eventType.textContent === '110111') {
+                if (cStatEvento && cStatEvento.textContent === '135') {
+                    return { text: 'CANCELADA (Evento 135)', class: 'status-cancelada' };
+                }
+            }
+            
+            if (cStat) {
+                switch(cStat) {
+                    case '100':
+                        return { text: 'AUTORIZADA', class: 'status-autorizada' };
+                    case '101':
+                        return { text: 'CANCELADA (Prot. 101)', class: 'status-cancelada' };
+                    case '110':
+                        return { text: 'DENEGADA', class: 'status-sem-autorizacao' };
+                    default:
+                        return { text: `REJEITADA (${cStat}: ${xMotivo || 'Motivo desconhecido'})`, class: 'status-sem-autorizacao' };
+                }
+            }
+
+            return { text: 'SEM PROTOCOLO DE AUTORIZAÇÃO', class: 'status-sem-autorizacao' };
+        }
+        
+        /**
+         * Calcula a soma de todos os campos 'valorNumerico' das notas carregadas.
+         */
+        function calcularTotalGeral() {
+            // Soma todos os valores numéricos, multiplicando por 100 para evitar imprecisão de float
+            const totalCents = notasFiscais.reduce((acc, nota) => {
+                return acc + Math.round(nota.valorNumerico * 100);
+            }, 0);
+            
+            // Divide por 100 e formata para moeda
+            return formatarValor(totalCents / 100);
+        }
+
+        /**
+         * Encontra o nome fantasia mais frequente para usar no título/nome do arquivo.
+         */
+        function obterNomeFantasiaPrincipal() {
+            if (notasFiscais.length === 0) return 'Empresa';
+            
+            const contagem = notasFiscais.reduce((acc, nota) => {
+                const nome = nota.nomeFantasia;
+                acc[nome] = (acc[nome] || 0) + 1;
+                return acc;
+            }, {});
+
+            let nomePrincipal = 'Empresa';
+            let maxCount = 0;
+            
+            for (const nome in contagem) {
+                if (contagem[nome] > maxCount) {
+                    maxCount = contagem[nome];
+                    nomePrincipal = nome;
+                }
+            }
+            return nomePrincipal;
+        }
+
+
+        // --- Lógica de Verificação de Sequência (Inalterada) ---
+
+        function processarNotas() {
+            if (notasFiscais.length === 0) {
+                alert("Nenhum arquivo XML válido foi carregado para processamento.");
+                return;
+            }
+
+            // 1. Agrupar e classificar as notas
+            const grupos = notasFiscais.reduce((acc, nota) => {
+                const chaveGrupo = `${nota.cnpj}-${nota.mod}-${nota.serie}`;
+                if (!acc[chaveGrupo]) {
+                    acc[chaveGrupo] = {
+                        info: { cnpj: nota.cnpj, mod: nota.mod, serie: nota.serie, emitente: nota.nomeFantasia },
+                        notas: []
+                    };
+                }
+                acc[chaveGrupo].notas.push(nota);
+                return acc;
+            }, {});
+
+            // 2. Verificar a sequência dentro de cada grupo
+            Object.values(grupos).forEach(grupo => {
+                grupo.notas.sort((a, b) => a.nNF - b.nNF);
+
+                grupo.notas.forEach((nota, index) => {
+                    if (index > 0) {
+                        const notaAnterior = grupo.notas[index - 1];
+                        
+                        if (nota.nNF > notaAnterior.nNF + 1) {
+                            const falta = nota.nNF - notaAnterior.nNF - 1;
+                            nota.quebra = `**QUEBRA DE SEQUÊNCIA!** Faltando ${falta} nota(s) entre **${notaAnterior.nNF}** e **${nota.nNF}**.`;
+                        } else if (nota.nNF === notaAnterior.nNF) {
+                             nota.quebra = `**DUPLICIDADE!** Nota **${nota.nNF}** já existe.`;
+                        } else {
+                            nota.quebra = 'OK';
+                        }
+                    } else {
+                        nota.quebra = 'Início da sequência analisada';
+                    }
+                });
+            });
+
+            // 3. Gerar o relatório
+            gerarRelatorioHTML(grupos);
+            pdfButton.disabled = Object.keys(grupos).length === 0;
+        }
+
+        // --- Exibição do Relatório (HTML Completo) ---
+
+        function gerarRelatorioHTML(grupos) {
+            relatorioContainer.innerHTML = '';
+            
+            if (Object.keys(grupos).length === 0) {
+                 relatorioContainer.innerHTML = '<p>Nenhuma nota fiscal válida encontrada para processamento.</p>';
+                 return;
+            }
+            
+            Object.values(grupos).forEach(grupo => {
+                const info = grupo.info;
+                const notas = grupo.notas;
+
+                let htmlGrupo = `
+                    <h3>🧾 ${info.emitente} (CNPJ: ${info.cnpj}) - Mod: ${info.mod} - Série: ${info.serie}</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Série</th>
+                                <th>Número</th>
+                                <th>Emissão</th>
+                                <th>Valor Total</th>
+                                <th>Chave de Acesso</th>
+                                <th>Status SEFAZ</th>
+                                <th>Status Sequência</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                notas.forEach(nota => {
+                    const quebraClass = nota.quebra.includes('QUEBRA') || nota.quebra.includes('DUPLICIDADE') ? 'quebra-indicada' : 'sem-quebra';
+                    const statusRowClass = nota.statusAutorizacao.class;
+
+                    htmlGrupo += `
+                        <tr class="${statusRowClass}">
+                            <td>${nota.serie}</td>
+                            <td>${nota.nNF}</td>
+                            <td>${nota.emissao}</td>
+                            <td>${nota.valorString}</td>
+                            <td>${nota.chave}</td>
+                            <td>${nota.statusAutorizacao.text}</td>
+                            <td class="${quebraClass}">${nota.quebra}</td>
+                        </tr>
+                    `;
+                });
+
+                htmlGrupo += `
+                        </tbody>
+                    </table>
+                `;
+                relatorioContainer.innerHTML += htmlGrupo;
+            });
+            
+            // Adiciona o campo de total no **FUNDO** (abaixo das vendas)
+            const totalGeral = calcularTotalGeral();
+            const totalHTML = `<div class="total-geral">TOTAL GERAL DAS VENDAS: ${totalGeral}</div>`;
+            relatorioContainer.innerHTML += totalHTML;
+        }
+        
+        // --- FUNÇÃO DE GERAÇÃO DE PDF ---
+        
+        function gerarRelatorioPDF() {
+            if (notasFiscais.length === 0) return;
+            
+            const grupos = notasFiscais.reduce((acc, nota) => {
+                const chaveGrupo = `${nota.cnpj}-${nota.mod}-${nota.serie}`;
+                if (!acc[chaveGrupo]) {
+                    acc[chaveGrupo] = {
+                        info: { cnpj: nota.cnpj, mod: nota.mod, serie: nota.serie, emitente: nota.nomeFantasia },
+                        notas: []
+                    };
+                }
+                acc[chaveGrupo].notas.push(nota);
+                return acc;
+            }, {});
+
+            const nomeFantasiaPrincipal = obterNomeFantasiaPrincipal();
+            const dataAtual = new Date();
+            const dataFormatada = formatarDataParaTitulo(dataAtual);
+            
+            // Título formatado para o PDF (Solicitação do usuário)
+            const tituloRelatorio = `Relatório Fiscal da Empresa ${nomeFantasiaPrincipal}, gerado em ${dataFormatada}.`;
+            
+            let htmlPDF = '<div id="relatorio-export">';
+            
+            // Título no PDF
+            htmlPDF += `<h1 class="pdf-report-title">${tituloRelatorio}</h1>`;
+
+            Object.values(grupos).forEach(grupo => {
+                const info = grupo.info;
+                const notas = grupo.notas;
+
+                // Cabeçalho do Grupo no PDF
+                htmlPDF += `<div class="pdf-header">Nome Fantasia: ${info.emitente} | CNPJ: ${info.cnpj} | Mod: ${info.mod} | Série: ${info.serie}</div>`;
+                
+                htmlPDF += `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Série</th>
+                                <th>Número</th>
+                                <th>Valor Total</th>
+                                <th>Chave de Acesso</th>
+                                <th>Status SEFAZ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                notas.forEach(nota => {
+                    const statusFinal = nota.statusAutorizacao.text;
+                    const statusRowClass = nota.statusAutorizacao.class;
+
+                    htmlPDF += `
+                        <tr class="${statusRowClass}">
+                            <td>${nota.serie}</td>
+                            <td>${nota.nNF}</td>
+                            <td>${nota.valorString}</td>
+                            <td>${nota.chave}</td>
+                            <td>${statusFinal}</td>
+                        </tr>
+                    `;
+                });
+
+                htmlPDF += `
+                        </tbody>
+                    </table>
+                `;
+            });
+            
+            // Adiciona o total geral no **FUNDO** do PDF
+            const totalGeral = calcularTotalGeral();
+            htmlPDF += `<div class="total-geral">TOTAL GERAL DAS VENDAS: ${totalGeral}</div>`;
+            
+            htmlPDF += '</div>';
+
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlPDF;
+            document.body.appendChild(tempDiv);
+            
+            // Geração do nome do arquivo com a data YYYY-MM-DD para ficar bom no sistema operacional
+            const dataISO = dataAtual.toISOString().split('T')[0]; // YYYY-MM-DD
+            const nomeArquivo = `Relatorio_Fiscal_${nomeFantasiaPrincipal.replace(/\s/g, '_')}_${dataISO}.pdf`;
+            
+            const opt = {
+                margin: 10,
+                filename: nomeArquivo,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(tempDiv).save().then(() => {
+                 // Remove a div temporária após a geração
+                document.body.removeChild(tempDiv);
+            });
+        }
+    </script>
+
+</body>
+</html>
