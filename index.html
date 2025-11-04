@@ -190,6 +190,62 @@
             margin-top: 30px;
             margin-bottom: 0;
         }
+        
+        /* Estilos para o Resumo */
+        .resumo-section {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .resumo-table-container {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .resumo-table-container h4 {
+            font-size: 12pt;
+            color: var(--cor-secundaria);
+            margin-top: 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid var(--cor-borda);
+        }
+
+        .resumo-table-container table {
+            width: 100%;
+            margin-top: 0;
+            box-shadow: none;
+        }
+        
+        .resumo-table-container th {
+            background-color: #555; /* Cinza mais escuro */
+        }
+        
+        /* Campo de Busca */
+        #search-container {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #searchInput {
+            padding: 10px;
+            flex-grow: 1;
+            border: 1px solid var(--cor-borda);
+            border-radius: 5px;
+            font-size: 1em;
+        }
 
     </style>
 </head>
@@ -213,6 +269,14 @@
 
     <h2>Relatório de Notas Fiscais (Visualização Completa)</h2>
     
+    <div id="search-container" style="display: none;">
+        <input type="text" id="searchInput" placeholder="Buscar por Chave, Data, Número ou Valor..." onkeyup="filtrarTabela()">
+        <button onclick="limparBusca()">Limpar</button>
+    </div>
+    
+    <div id="resumo-container" style="display: none;" class="resumo-section">
+        </div>
+    
     <div id="relatorio-completo"> 
         <div id="relatorio-container">
             <p>Carregue os arquivos XML e clique em "Processar" para gerar o relatório.</p>
@@ -224,9 +288,32 @@
         const fileElem = document.getElementById('fileElem');
         const dropArea = document.getElementById('drop-area');
         const relatorioContainer = document.getElementById('relatorio-container');
+        const resumoContainer = document.getElementById('resumo-container');
+        const searchInput = document.getElementById('searchInput');
+        const searchContainer = document.getElementById('search-container');
         const processButton = document.getElementById('processButton');
         const pdfButton = document.getElementById('pdfButton');
         let notasFiscais = [];
+        let gruposGlobais = {}; // Para uso nas funções de resumo e busca
+        
+        // Mapeamento de Forma de Pagamento (tPag)
+        const formasPagamento = {
+            '01': 'Dinheiro',
+            '02': 'Cheque',
+            '03': 'Cartão de Crédito',
+            '04': 'Cartão de Débito',
+            '05': 'Crédito Loja',
+            '10': 'Vale Alimentação',
+            '11': 'Vale Refeição',
+            '12': 'Vale Presente',
+            '13': 'Vale Combustível',
+            '14': 'Duplicata Mercantil',
+            '15': 'Boleto Bancário',
+            '17': 'Pagamento Instantâneo (PIX)',
+            '20': 'Pagamento Instantâneo (PIX)',
+            '90': 'Sem Pagamento',
+            '99': 'Outros'
+        };
 
         // --- Configuração de Arrastar e Soltar (Drag and Drop) ---
 
@@ -262,6 +349,9 @@
         function handleFiles(files) {
             notasFiscais = [];
             pdfButton.disabled = true;
+            searchContainer.style.display = 'none';
+            resumoContainer.style.display = 'none';
+            
             if (files.length === 0) {
                 processButton.disabled = true;
                 relatorioContainer.innerHTML = '<p>Carregue os arquivos XML e clique em "Processar" para gerar o relatório.</p>';
@@ -287,11 +377,13 @@
                         const serie = safeText(xmlDoc, 'serie');
                         const CNPJ = safeText(xmlDoc, 'CNPJ');
 
-                        // Campos Adicionais para Visualização
+                        // Campos Adicionais para Visualização e Resumo
                         const dhEmi = safeText(xmlDoc, 'dhEmi');
                         const vNF = safeText(xmlDoc, 'vNF'); 
                         const chaveAcesso = safeText(xmlDoc, 'chNFe') || safeText(xmlDoc, 'chNFCE');
                         const xFant = safeText(xmlDoc, 'xFant');
+                        const CFOP = safeText(xmlDoc, 'CFOP'); // Novo: CFOP
+                        const tPag = safeText(xmlDoc, 'tPag'); // Novo: Forma de Pagamento (tPag)
                         
                         // Status de Autorização/Cancelamento
                         const cStat = safeText(xmlDoc, 'cStat');
@@ -312,7 +404,9 @@
                                 chave: chaveAcesso,
                                 nomeFantasia: xFant || safeText(xmlDoc, 'xNome') || 'Emitente não identificado',
                                 statusAutorizacao: statusCompleto,
-                                quebra: 'Não processado' 
+                                quebra: 'Não processado',
+                                cfop: CFOP || 'N/A', // Novo campo
+                                tPag: tPag || '90' // Novo campo (Sem Pagamento por padrão se não encontrar)
                             });
                         }
 
@@ -332,9 +426,27 @@
         // --- Funções Auxiliares de Leitura e Formatação ---
         
         function safeText(xmlDoc, tagName) {
-            let element = xmlDoc.querySelector(`*[id='infNFe'] ${tagName}, ${tagName}`);
+            let element;
+            
+            // Tratamento especial para CFOP (dentro de det/prod)
+            if (tagName === 'CFOP') {
+                 // Procura por <det><prod><CFOP> ou <det><CFOP>
+                element = xmlDoc.querySelector('det prod CFOP, det CFOP'); 
+                if (element) return element.textContent;
+            }
+            
+            // Tratamento especial para tPag (dentro de pag) - (NFC-e ou NF-e com detalhes)
+            if (tagName === 'tPag') {
+                // Procura por <pag><detPag><tPag> ou <pag><tPag>
+                element = xmlDoc.querySelector('pag detPag tPag, pag tPag'); 
+                if (element) return element.textContent;
+            }
+
+            // Campos padrão (nNF, mod, serie, dhEmi, vNF, chNFe, xFant, CNPJ)
+            element = xmlDoc.querySelector(`*[id='infNFe'] ${tagName}, ${tagName}`);
             if (element) return element.textContent;
 
+            // Status de Autorização/Cancelamento
             if (tagName === 'cStat' || tagName === 'xMotivo') {
                 element = xmlDoc.querySelector('protNFe ' + tagName + ', protNFCE ' + tagName);
                 if (element) return element.textContent;
@@ -492,7 +604,7 @@
         }
 
 
-        // --- Lógica de Verificação de Sequência (Inalterada) ---
+        // --- Lógica de Verificação de Sequência ---
 
         function processarNotas() {
             if (notasFiscais.length === 0) {
@@ -512,6 +624,8 @@
                 acc[chaveGrupo].notas.push(nota);
                 return acc;
             }, {});
+            
+            gruposGlobais = grupos; // Armazena grupos para uso na busca
 
             // 2. Verificar a sequência dentro de cada grupo
             Object.values(grupos).forEach(grupo => {
@@ -537,8 +651,94 @@
 
             // 3. Gerar o relatório
             gerarRelatorioHTML(grupos);
+            gerarResumos(notasFiscais); // Novo: Gerar resumos
             pdfButton.disabled = Object.keys(grupos).length === 0;
+            searchContainer.style.display = 'flex'; // Exibe o campo de busca
         }
+
+        // --- Geração de Resumos (CFOP e Pagamento) ---
+        
+        function gerarResumos(notas) {
+            const resumoCFOP = {};
+            const resumoPagamento = {};
+            
+            notas.forEach(nota => {
+                // Resumo por CFOP
+                if (nota.statusAutorizacao.text.includes('AUTORIZADA')) {
+                    const cfopKey = nota.cfop;
+                    resumoCFOP[cfopKey] = resumoCFOP[cfopKey] || { count: 0, total: 0 };
+                    resumoCFOP[cfopKey].count++;
+                    resumoCFOP[cfopKey].total += Math.round(nota.valorNumerico * 100);
+                    
+                    // Resumo por Forma de Pagamento (tPag)
+                    const pagKey = nota.tPag;
+                    resumoPagamento[pagKey] = resumoPagamento[pagKey] || { count: 0, total: 0 };
+                    resumoPagamento[pagKey].count++;
+                    resumoPagamento[pagKey].total += Math.round(nota.valorNumerico * 100);
+                }
+            });
+
+            // Geração do HTML do Resumo CFOP
+            let htmlCFOP = `
+                <div class="resumo-table-container">
+                    <h4>Resumo de Vendas (Notas Autorizadas) por CFOP</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CFOP</th>
+                                <th>Notas</th>
+                                <th>Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            Object.keys(resumoCFOP).sort().forEach(cfop => {
+                const dados = resumoCFOP[cfop];
+                const totalFormatado = formatarValor(dados.total / 100);
+                htmlCFOP += `
+                    <tr>
+                        <td>${cfop}</td>
+                        <td>${dados.count}</td>
+                        <td>${totalFormatado}</td>
+                    </tr>
+                `;
+            });
+            htmlCFOP += `</tbody></table></div>`;
+            
+            // Geração do HTML do Resumo de Pagamento
+            let htmlPagamento = `
+                <div class="resumo-table-container">
+                    <h4>Resumo de Vendas (Notas Autorizadas) por Forma de Pagamento</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Forma</th>
+                                <th>Notas</th>
+                                <th>Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            Object.keys(resumoPagamento).sort().forEach(tPag => {
+                const dados = resumoPagamento[tPag];
+                const totalFormatado = formatarValor(dados.total / 100);
+                const nomePagamento = formasPagamento[tPag] || `Cód. ${tPag}`;
+                htmlPagamento += `
+                    <tr>
+                        <td>${nomePagamento}</td>
+                        <td>${dados.count}</td>
+                        <td>${totalFormatado}</td>
+                    </tr>
+                `;
+            });
+            htmlPagamento += `</tbody></table></div>`;
+            
+            resumoContainer.innerHTML = htmlCFOP + htmlPagamento;
+            resumoContainer.style.display = 'flex'; // Exibe o container de resumos
+        }
+
 
         // --- Exibição do Relatório (HTML Completo) ---
 
@@ -550,36 +750,44 @@
                  return;
             }
             
-            Object.values(grupos).forEach(grupo => {
+            Object.keys(grupos).forEach(chaveGrupo => { // Iterar por chave para manter a referência
+                const grupo = grupos[chaveGrupo];
                 const info = grupo.info;
                 const notas = grupo.notas;
 
+                // Adiciona o ID da chave do grupo na div de tabelas para facilitar a busca
                 let htmlGrupo = `
-                    <h3>🧾 ${info.emitente} (CNPJ: ${info.cnpj}) - Mod: ${info.mod} - Série: ${info.serie}</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Série</th>
-                                <th>Número</th>
-                                <th>Emissão</th>
-                                <th>Valor Total</th>
-                                <th>Chave de Acesso</th>
-                                <th>Status SEFAZ</th>
-                                <th>Status Sequência</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <div id="table-group-${chaveGrupo}">
+                        <h3>🧾 ${info.emitente} (CNPJ: ${info.cnpj}) - Mod: ${info.mod} - Série: ${info.serie}</h3>
+                        <table id="table-${chaveGrupo}">
+                            <thead>
+                                <tr>
+                                    <th>Série</th>
+                                    <th>Número</th>
+                                    <th>Emissão</th>
+                                    <th>CFOP</th>
+                                    <th>Forma Pag.</th>
+                                    <th>Valor Total</th>
+                                    <th>Chave de Acesso</th>
+                                    <th>Status SEFAZ</th>
+                                    <th>Status Sequência</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                 `;
                 
                 notas.forEach(nota => {
                     const quebraClass = nota.quebra.includes('QUEBRA') || nota.quebra.includes('DUPLICIDADE') ? 'quebra-indicada' : 'sem-quebra';
                     const statusRowClass = nota.statusAutorizacao.class;
+                    const nomePagamento = formasPagamento[nota.tPag] || nota.tPag;
 
                     htmlGrupo += `
                         <tr class="${statusRowClass}">
                             <td>${nota.serie}</td>
                             <td>${nota.nNF}</td>
                             <td>${nota.emissao}</td>
+                            <td>${nota.cfop}</td>
+                            <td>${nomePagamento}</td>
                             <td>${nota.valorString}</td>
                             <td>${nota.chave}</td>
                             <td>${nota.statusAutorizacao.text}</td>
@@ -589,8 +797,9 @@
                 });
 
                 htmlGrupo += `
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
                 `;
                 relatorioContainer.innerHTML += htmlGrupo;
             });
@@ -601,11 +810,46 @@
             relatorioContainer.innerHTML += totalHTML;
         }
         
+        // --- FUNÇÕES DE BUSCA/FILTRO ---
+        
+        function filtrarTabela() {
+            const filtro = searchInput.value.toUpperCase();
+            // A busca será aplicada a todas as tabelas geradas no relatório
+            const tables = relatorioContainer.querySelectorAll('table');
+
+            tables.forEach(table => {
+                const trs = table.getElementsByTagName('tr');
+                for (let i = 1; i < trs.length; i++) { // Começa em 1 para pular o cabeçalho
+                    let showRow = false;
+                    // Percorre todas as células (td) da linha
+                    for (let j = 0; j < trs[i].cells.length; j++) {
+                        const td = trs[i].cells[j];
+                        if (td) {
+                            // Busca por Chave de Acesso, Data, Número, Valor
+                            const text = td.textContent || td.innerText;
+                            if (text.toUpperCase().indexOf(filtro) > -1) {
+                                showRow = true;
+                                break;
+                            }
+                        }
+                    }
+                    trs[i].style.display = showRow ? "" : "none";
+                }
+            });
+        }
+        
+        function limparBusca() {
+            searchInput.value = '';
+            filtrarTabela(); // Aplica o filtro vazio, mostrando todas as linhas
+        }
+
+
         // --- FUNÇÃO DE GERAÇÃO DE PDF ---
         
         function gerarRelatorioPDF() {
             if (notasFiscais.length === 0) return;
             
+            // Reconstroi os grupos (ou usa gruposGlobais)
             const grupos = notasFiscais.reduce((acc, nota) => {
                 const chaveGrupo = `${nota.cnpj}-${nota.mod}-${nota.serie}`;
                 if (!acc[chaveGrupo]) {
@@ -622,14 +866,66 @@
             const dataAtual = new Date();
             const dataFormatada = formatarDataParaTitulo(dataAtual);
             
-            // Título formatado para o PDF (Solicitação do usuário)
+            // Título formatado para o PDF
             const tituloRelatorio = `Relatório Fiscal da Empresa ${nomeFantasiaPrincipal.replace(/_/g, ' ')}, gerado em ${dataFormatada}.`;
             
             let htmlPDF = '<div id="relatorio-export">';
             
             // Título no PDF
             htmlPDF += `<h1 class="pdf-report-title">${tituloRelatorio}</h1>`;
+            
+            // Incluir os resumos no PDF (Recriando a estrutura para PDF)
+            const resumoCFOP = {};
+            const resumoPagamento = {};
+            
+            notasFiscais.forEach(nota => {
+                if (nota.statusAutorizacao.text.includes('AUTORIZADA')) {
+                    const cfopKey = nota.cfop;
+                    resumoCFOP[cfopKey] = resumoCFOP[cfopKey] || { count: 0, total: 0 };
+                    resumoCFOP[cfopKey].count++;
+                    resumoCFOP[cfopKey].total += Math.round(nota.valorNumerico * 100);
+                    
+                    const pagKey = nota.tPag;
+                    resumoPagamento[pagKey] = resumoPagamento[pagKey] || { count: 0, total: 0 };
+                    resumoPagamento[pagKey].count++;
+                    resumoPagamento[pagKey].total += Math.round(nota.valorNumerico * 100);
+                }
+            });
 
+            // HTML Resumo CFOP para PDF
+            let htmlResumoCFOP = `
+                <div class="pdf-header" style="margin-top: 15px;">Resumo por CFOP (Notas Autorizadas)</div>
+                <table>
+                    <thead>
+                        <tr><th>CFOP</th><th>Notas</th><th>Valor Total</th></tr>
+                    </thead>
+                    <tbody>
+            `;
+            Object.keys(resumoCFOP).sort().forEach(cfop => {
+                const dados = resumoCFOP[cfop];
+                htmlResumoCFOP += `<tr><td>${cfop}</td><td>${dados.count}</td><td>${formatarValor(dados.total / 100)}</td></tr>`;
+            });
+            htmlResumoCFOP += `</tbody></table>`;
+            
+            // HTML Resumo Pagamento para PDF
+            let htmlResumoPagamento = `
+                <div class="pdf-header" style="margin-top: 15px;">Resumo por Forma de Pagamento (Notas Autorizadas)</div>
+                <table>
+                    <thead>
+                        <tr><th>Forma</th><th>Notas</th><th>Valor Total</th></tr>
+                    </thead>
+                    <tbody>
+            `;
+            Object.keys(resumoPagamento).sort().forEach(tPag => {
+                const dados = resumoPagamento[tPag];
+                const nomePagamento = formasPagamento[tPag] || `Cód. ${tPag}`;
+                htmlResumoPagamento += `<tr><td>${nomePagamento}</td><td>${dados.count}</td><td>${formatarValor(dados.total / 100)}</td></tr>`;
+            });
+            htmlResumoPagamento += `</tbody></table>`;
+            
+            htmlPDF += `<div style="display: flex; gap: 10px; flex-wrap: wrap;">${htmlResumoCFOP} ${htmlResumoPagamento}</div>`;
+            
+            // Detalhe das Notas no PDF
             Object.values(grupos).forEach(grupo => {
                 const info = grupo.info;
                 const notas = grupo.notas;
@@ -643,8 +939,9 @@
                             <tr>
                                 <th>Série</th>
                                 <th>Número</th>
+                                <th>Emissão</th>
+                                <th>CFOP</th>
                                 <th>Valor Total</th>
-                                <th>Chave de Acesso</th>
                                 <th>Status SEFAZ</th>
                             </tr>
                         </thead>
@@ -659,8 +956,9 @@
                         <tr class="${statusRowClass}">
                             <td>${nota.serie}</td>
                             <td>${nota.nNF}</td>
+                            <td>${nota.emissao}</td>
+                            <td>${nota.cfop}</td>
                             <td>${nota.valorString}</td>
-                            <td>${nota.chave}</td>
                             <td>${statusFinal}</td>
                         </tr>
                     `;
@@ -672,7 +970,7 @@
                 `;
             });
             
-            // Adiciona o total geral no **FUNDO** do PDF (Design profissional em preto)
+            // Adiciona o total geral no **FUNDO** do PDF
             const totalGeral = calcularTotalGeral();
             htmlPDF += `<div class="total-geral">TOTAL GERAL DAS NOTAS: <span>${totalGeral}</span></div>`;
             
