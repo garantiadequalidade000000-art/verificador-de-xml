@@ -8,52 +8,198 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        #drop-area { border: 2px dashed #ccc; padding: 20px; text-align: center; margin-bottom: 20px; cursor: pointer; }
-        .quebra-indicada { color: red; font-weight: bold; }
-        .sem-quebra { color: green; }
+        /* Paleta de Cores: Baseado na Logo (Laranja Escuro) */
+        :root {
+            --cor-principal: #D9531E; /* Laranja Escuro (Mais profissional) */
+            --cor-secundaria: #333; /* Cinza escuro para texto e detalhes (quase preto) */
+            --cor-fundo: #f4f4f9;
+            --cor-borda: #ddd;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 20px;
+            background-color: var(--cor-fundo);
+            color: var(--cor-secundaria);
+        }
         
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 10pt; }
-        th { background-color: #f2f2f2; }
+        /* Cabeçalho e Logo */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            border-bottom: 3px solid var(--cor-principal);
+            padding-bottom: 10px;
+        }
+
+        header img {
+            width: 50px; /* Ajuste o tamanho da logo conforme necessário */
+            height: auto;
+        }
         
-        /* Estilos específicos para a DIV de relatório que será exportada */
-        #relatorio-export { padding: 15px; background-color: #fff; }
+        header h1 {
+            color: var(--cor-secundaria);
+            font-size: 24pt;
+            margin: 0;
+            flex-grow: 1;
+            text-align: center;
+        }
+
+        #drop-area { 
+            border: 3px dashed var(--cor-borda); 
+            background-color: #fff;
+            padding: 30px; 
+            text-align: center; 
+            margin-bottom: 20px; 
+            cursor: pointer; 
+            transition: border-color 0.3s, background-color 0.3s;
+            border-radius: 8px;
+            font-size: 1.1em;
+        }
+
+        #drop-area.highlight {
+            border-color: var(--cor-principal);
+            background-color: #fcf4f2; /* Fundo mais claro para laranja */
+        }
+        
+        /* Botões */
+        button {
+            padding: 10px 20px;
+            background-color: var(--cor-principal);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #A34017; /* Tom mais escuro do laranja */
+        }
+        
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* Tabela */
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 15px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td { 
+            border: 1px solid var(--cor-borda); 
+            padding: 10px; 
+            text-align: left; 
+            font-size: 10pt; 
+        }
+        th { 
+            background-color: var(--cor-principal); 
+            color: white; 
+            text-transform: uppercase;
+            font-size: 0.9em;
+        }
+        
+        /* Estilos de Status/Sequência */
+        .quebra-indicada { 
+            color: var(--cor-principal); 
+            font-weight: bold; 
+            background-color: #fcf4f2; /* Fundo mais claro para laranja */
+        }
+        .sem-quebra { 
+            color: #1a8a25; /* Verde escuro para OK */
+            font-weight: bold;
+        }
         
         /* Estilo para notas canceladas/rejeitadas */
-        .status-cancelada, .status-sem-autorizacao { background-color: #fcebeb; }
-        .status-autorizada { background-color: #effceb; }
+        .status-cancelada, .status-sem-autorizacao { 
+            background-color: #fcf4f2; /* Fundo mais claro para laranja */
+        }
+        .status-autorizada { 
+            background-color: #effceb; 
+        }
         
-        /* Estilo para o cabeçalho no PDF (destaque do Nome Fantasia) */
-        .pdf-header { font-size: 12pt; font-weight: bold; margin-top: 20px; margin-bottom: 5px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-        
-        /* Destaque para o valor total */
-        .total-geral {
-            font-size: 18pt;
-            font-weight: bold;
-            padding: 15px;
-            margin-top: 20px; /* Movido para baixo */
-            border: 2px solid #007bff;
-            background-color: #e6f7ff;
-            border-radius: 5px;
-            text-align: center;
+        /* Relatório para Exportação (PDF) */
+        #relatorio-export { 
+            padding: 15px; 
+            background-color: #fff; 
+            font-family: Arial, sans-serif; /* Padrão para PDF */
         }
         
         /* Título do Relatório no PDF */
         .pdf-report-title {
-            font-size: 14pt;
+            font-size: 18pt;
             font-weight: bold;
             text-align: center;
             margin-bottom: 25px;
             padding-bottom: 10px;
-            border-bottom: 3px double #000;
+            border-bottom: 3px double var(--cor-principal);
+            color: var(--cor-secundaria);
         }
         
+        /* Cabeçalho do Grupo no PDF */
+        .pdf-header { 
+            font-size: 11pt; 
+            font-weight: bold; 
+            margin-top: 25px; 
+            margin-bottom: 5px; 
+            border-bottom: 2px solid var(--cor-principal); 
+            padding-bottom: 5px; 
+            color: var(--cor-secundaria);
+        }
+        
+        /* Destaque para o valor total (PRETO E MENOR) */
+        .total-geral {
+            font-size: 16pt; 
+            font-weight: bold;
+            padding: 10px; 
+            margin-top: 30px; 
+            border: 2px solid var(--cor-secundaria); /* Borda preta */
+            background-color: #f9f9f9; 
+            border-radius: 5px; 
+            text-align: right; 
+            color: var(--cor-secundaria); /* Texto preto */
+        }
+        
+        .total-geral span {
+            font-size: 1.1em;
+            color: #000;
+        }
+
+        /* Estilos do Título do Grupo */
+        #relatorio-completo h2 {
+            font-size: 18pt;
+            color: var(--cor-secundaria);
+            margin-top: 40px;
+            border-bottom: 1px solid var(--cor-borda);
+            padding-bottom: 5px;
+        }
+        
+        #relatorio-completo h3 {
+            font-size: 14pt;
+            color: var(--cor-principal);
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-left: 5px solid var(--cor-principal);
+            margin-top: 30px;
+            margin-bottom: 0;
+        }
+
     </style>
 </head>
 <body>
 
-    <h1>Verificador de Quebra de Sequência NF-e / NFC-e</h1>
+    <header>
+        <img src="https://res.cloudinary.com/drsyomd2a/image/upload/v1762261454/Design-sem-nome_uxeex5.png" alt="Logo">
+        <h1>Verificador de Quebra de Sequência NF-e / NFC-e</h1>
+        <div style="width: 50px;"></div> 
+    </header>
 
     <div id="drop-area">
         Arraste e solte arquivos **XML** (ou clique para selecionar)<br>
@@ -61,7 +207,7 @@
     </div>
 
     <div style="margin-bottom: 20px;">
-        <button onclick="processarNotas()" id="processButton" disabled>Processar e Verificar Sequência</button>
+        <button onclick="processarNotas()" id="processButton" disabled>⚙️ Processar e Verificar Sequência</button>
         <button onclick="gerarRelatorioPDF()" id="pdfButton" disabled>💾 Gerar PDF do Relatório</button>
     </div>
 
@@ -297,7 +443,52 @@
                     nomePrincipal = nome;
                 }
             }
-            return nomePrincipal;
+            // Remove espaços e substitui por underscore para o nome do arquivo
+            return nomePrincipal.replace(/\s/g, '_'); 
+        }
+
+        /**
+         * Encontra o período de emissão (mês/ano) das notas carregadas.
+         * @returns {string} O período formatado (Ex: "01_2024" ou "12_2023_a_01_2024").
+         */
+        function obterPeriodoEmissaoPrincipal() {
+            if (notasFiscais.length === 0) return '';
+            
+            let minComparavel = Infinity;
+            let maxComparavel = -Infinity;
+            let minMesAno = '';
+            let maxMesAno = '';
+
+            notasFiscais.forEach(nota => {
+                const [day, month, year] = nota.emissao.split('/'); // nota.emissao está em 'DD/MM/YYYY'
+                
+                // Se a data for 'N/A' ou 'Inválida', ignora
+                if (!month || !year || nota.emissao === 'N/A' || nota.emissao === 'Inválida') return; 
+
+                // Converte a data para um formato comparável (YYYYMM)
+                const comparavel = parseInt(year + month.padStart(2, '0')); // Ex: 202401
+                const mesAno = `${month}_${year}`; // Ex: 01_2024
+                
+                if (comparavel < minComparavel) {
+                    minComparavel = comparavel;
+                    minMesAno = mesAno;
+                }
+                if (comparavel > maxComparavel) {
+                    maxComparavel = comparavel;
+                    maxMesAno = mesAno;
+                }
+            });
+            
+            // Se não encontrou datas válidas
+            if (minComparavel === Infinity) return '';
+
+            // Se o mês/ano inicial e final forem iguais, retorna apenas um
+            if (minMesAno === maxMesAno) {
+                return minMesAno;
+            } else {
+                // Se houver diferença, retorna o intervalo
+                return `${minMesAno}_a_${maxMesAno}`;
+            }
         }
 
 
@@ -406,7 +597,7 @@
             
             // Adiciona o campo de total no **FUNDO** (abaixo das vendas)
             const totalGeral = calcularTotalGeral();
-            const totalHTML = `<div class="total-geral">TOTAL GERAL DAS VENDAS: ${totalGeral}</div>`;
+            const totalHTML = `<div class="total-geral">TOTAL GERAL DAS NOTAS: <span>${totalGeral}</span></div>`;
             relatorioContainer.innerHTML += totalHTML;
         }
         
@@ -432,7 +623,7 @@
             const dataFormatada = formatarDataParaTitulo(dataAtual);
             
             // Título formatado para o PDF (Solicitação do usuário)
-            const tituloRelatorio = `Relatório Fiscal da Empresa ${nomeFantasiaPrincipal}, gerado em ${dataFormatada}.`;
+            const tituloRelatorio = `Relatório Fiscal da Empresa ${nomeFantasiaPrincipal.replace(/_/g, ' ')}, gerado em ${dataFormatada}.`;
             
             let htmlPDF = '<div id="relatorio-export">';
             
@@ -481,9 +672,9 @@
                 `;
             });
             
-            // Adiciona o total geral no **FUNDO** do PDF
+            // Adiciona o total geral no **FUNDO** do PDF (Design profissional em preto)
             const totalGeral = calcularTotalGeral();
-            htmlPDF += `<div class="total-geral">TOTAL GERAL DAS VENDAS: ${totalGeral}</div>`;
+            htmlPDF += `<div class="total-geral">TOTAL GERAL DAS NOTAS: <span>${totalGeral}</span></div>`;
             
             htmlPDF += '</div>';
 
@@ -491,9 +682,9 @@
             tempDiv.innerHTML = htmlPDF;
             document.body.appendChild(tempDiv);
             
-            // Geração do nome do arquivo com a data YYYY-MM-DD para ficar bom no sistema operacional
-            const dataISO = dataAtual.toISOString().split('T')[0]; // YYYY-MM-DD
-            const nomeArquivo = `Relatorio_Fiscal_${nomeFantasiaPrincipal.replace(/\s/g, '_')}_${dataISO}.pdf`;
+            // --- NOVO FORMATO DO NOME DO ARQUIVO ---
+            const periodoEmissao = obterPeriodoEmissaoPrincipal();
+            const nomeArquivo = `Relatorio_Fiscal_${nomeFantasiaPrincipal}_${periodoEmissao}.pdf`;
             
             const opt = {
                 margin: 10,
